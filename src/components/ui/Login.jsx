@@ -200,7 +200,7 @@ const Login = () => {
             onSuccess={handleGoogleLogin}
             onError={() => setError("Google login failed")}
           />
-          <GithubLogin /> 
+          
         </div>
 
         
