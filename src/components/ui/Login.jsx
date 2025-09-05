@@ -6,33 +6,20 @@ import { jwtDecode } from "jwt-decode";
 import { useLog } from "@/context/LogContext";
 import GithubLogin from "./GithubLogin";
 import { useForm } from "react-hook-form";
+import { Eye, EyeOff } from "lucide-react";
+import { decryptData, encryptData } from "../Store/authUtils";
 
-// Normal login function
-async function loginUser({ username, password }) {
-  try {
-    const res = await fetch(
-      `http://localhost:5000/register?username=${username}&password=${password}`
-    );
-    const data = await res.json();
+// Normal login function (with decrypted password check)
+function loginUser({ username, password }) {
+  const users = JSON.parse(localStorage.getItem("users")) || [];
+  const user = users.find(
+    (u) => u.username === username && decryptData(u.password) === password
+  );
 
-    if (data.length > 0) {
-      const user = data[0];
-      const logInTime = new Date().toISOString();
-
-      await fetch("http://localhost:5000/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...user, logInTime }),
-      });
-
-      localStorage.setItem("user", JSON.stringify(user));
-      return { success: true, user };
-    } else {
-      return { success: false, message: "Invalid username or password" };
-    }
-  } catch (err) {
-    console.error("Login error:", err);
-    return { success: false, message: "Server error. Try again later." };
+  if (user) {
+    return { success: true, user };
+  } else {
+    return { success: false, message: "Invalid username or password" };
   }
 }
 
@@ -40,6 +27,7 @@ const Login = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -50,6 +38,8 @@ const Login = () => {
 
   const navigate = useNavigate();
   const { addLog } = useLog();
+
+
 
   // Load remembered credentials
   useEffect(() => {
@@ -62,12 +52,43 @@ const Login = () => {
     }
   }, [setValue]);
 
+  // Handle GitHub OAuth simulation
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const code = query.get("code");
+
+    if (code) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      const user = {
+        username: "github_demo",
+        email: "demo@github.com",
+        provider: "github",
+      };
+      const logInTime = new Date().toISOString();
+
+      Cookies.set("currentUser", encryptData(user), {
+        expires: rememberMe ? 7 : undefined,
+      });
+      localStorage.setItem("user", JSON.stringify(user));
+
+      // fetch("http://localhost:5000/session", {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify({ ...user, logInTime }),
+      // });
+
+      addLog(` logged in with GitHub`);
+      window.location.href = "/home/dashboard";
+    }
+  }, [ rememberMe, addLog]);
+
   // Handle normal login
   const onSubmit = async (data) => {
     setError("");
     setLoading(true);
 
-    const response = await loginUser(data);
+    const response =  loginUser(data);
 
     if (rememberMe) {
       localStorage.setItem("username", data.username);
@@ -80,12 +101,12 @@ const Login = () => {
     if (response.success) {
       const user = response.user;
 
-      Cookies.set("user", JSON.stringify(user), {
+      Cookies.set("currentUser", encryptData(user), {
         expires: rememberMe ? 7 : undefined,
       });
 
-      addLog(`${user.username} logged in`);
-      window.location.href = "http://localhost:5173/home/dashboard";
+      
+      window.location.href = "/home/dashboard";
 
     } else {
       setError(response.message);
@@ -94,36 +115,42 @@ const Login = () => {
   };
 
   // Handle Google login
-  const handleGoogleLogin = async (credentialResponse) => {
-    setError("");
-    try {
-      if (!credentialResponse.credential)
-        throw new Error("No credentials found");
+const handleGoogleLogin = (credentialResponse) => {
+  setError("");
 
-      const decoded = jwtDecode(credentialResponse.credential);
-      const user = { username: decoded.name, email: decoded.email };
-      const logInTime = new Date().toISOString();
+  try {
+    const token = credentialResponse?.credential;
+    if (!token) throw new Error("No credentials found");
 
-      await fetch("http://localhost:5000/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...user, logInTime }),
-      });
+    const decoded = jwtDecode(token);
+    if (!decoded?.name || !decoded?.email) throw new Error("Invalid token data");
 
-      Cookies.set("user", JSON.stringify(user), {
-        expires: rememberMe ? 7 : undefined,
-      });
+    const user = {
+      username: decoded.name,
+      email: decoded.email,
+      provider: "google",
+    };
 
-      localStorage.setItem("user", JSON.stringify(user));
+    const logInTime = new Date().toISOString();
 
-      addLog(`${user.username} logged in`);
-      window.location.href = "http://localhost:5173/home/dashboard";
+    Cookies.set("currentUser", encryptData(user), {
+      expires: rememberMe ? 7 : undefined,
+    });
+    localStorage.setItem("user", JSON.stringify(user));
 
-    } catch (err) {
-      console.error("Google login decode error:", err);
-      setError("Google login failed. Please try again.");
-    }
-  };
+    addLog(`${user.username} logged in via Google`);
+
+    // 🔑 This replaces navigate("/home/dashboard")
+    window.location.href = "/home/dashboard"; 
+    // or use window.location.replace("/home/dashboard"); if you don't want back button
+  } catch (err) {
+    console.error("Google login error:", err);
+    setError("Google login failed. Please try again.");
+  }
+};
+
+
+
 
   return (
     <div className="w-80 rounded-lg shadow h-auto p-6 bg-white relative overflow-hidden mx-auto mt-20">
@@ -162,10 +189,11 @@ const Login = () => {
 
         {/* Password */}
         <div>
-          <input
-            className="outline-none border-2 rounded-md px-2 py-1 text-slate-500 w-full focus:border-blue-300"
+          <div className="relative w-full">
+           <input
+            type={showPassword ? "text" : "password"} // ✅ standard way
+            className="outline-none border-2 rounded-md px-2 pr-10 py-1 text-slate-500 w-full focus:border-blue-300"
             placeholder="Password"
-            type="password"
             {...register("password", {
               required: "Password is required",
               minLength: {
@@ -174,11 +202,20 @@ const Login = () => {
               },
             })}
           />
-          {errors.password && (
-            <p className="text-red-500 text-xs mt-1">
-              {errors.password.message}
-            </p>
-          )}
+
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+            {errors?.password && (
+              <p className="text-red-500 text-xs mt-1">
+                {errors.password.message}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Remember Me */}
@@ -200,10 +237,9 @@ const Login = () => {
             onSuccess={handleGoogleLogin}
             onError={() => setError("Google login failed")}
           />
-          
+          <GithubLogin />
         </div>
 
-        
         <button
           className="w-full justify-center py-1 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 rounded-md text-white ring-2 disabled:bg-blue-300"
           type="submit"
@@ -212,7 +248,6 @@ const Login = () => {
           {loading ? "Logging in..." : "Login"}
         </button>
 
-        
         <p className="flex justify-center space-x-1 mt-2">
           <span className="text-slate-700">Don't have an account?</span>
           <Link to="/register" className="text-blue-500 hover:underline">

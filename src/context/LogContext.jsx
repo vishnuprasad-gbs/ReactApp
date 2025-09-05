@@ -1,38 +1,44 @@
-// src/context/LogContext.js
+import { useNotifications } from "@/components/Store/notifications";
 import React, { createContext, useContext, useState, useEffect } from "react";
-import axios from "axios";
 
 const LogContext = createContext();
 
-export function LogProvider({ children }) {
+export function LogProvider({ children, user }) {
   const [log, setLog] = useState([]);
-
-  // Fetch logs from backend on mount
+  const { addNotification } = useNotifications()
+  // Load user's logs from localStorage when user changes
   useEffect(() => {
-    async function fetchLogs() {
-      try {
-        const res = await axios.get("http://localhost:5000/activity");
-        setLog(res.data || []);
-      } catch (err) {
-        console.error("Error fetching logs:", err);
-      }
+    if (user?.username) {
+      const key = `activityLogs_${user.username}`;
+      const storedLogs = JSON.parse(localStorage.getItem(key) || "[]");
+      setLog(storedLogs);
+    } else {
+      setLog([]);
     }
-    fetchLogs();
-  }, []);
+  }, [user]);
 
+  // Add a new log entry
   function addLog(msg) {
+    if (!user?.username) return;
     const stamped = `${new Date().toLocaleString()} — ${msg}`;
-    setLog((l) => [stamped, ...l].slice(0, 100));
+    const key = `activityLogs_${user.username}`;
+    const existing = JSON.parse(localStorage.getItem(key) || "[]");
+    const updated = [stamped, ...existing].slice(0, 100);
+    localStorage.setItem(key, JSON.stringify(updated));
+    setLog(updated);
+     addNotification(msg); 
+  }
 
-    
-    axios
-      .post("http://localhost:5000/activity", { log: stamped })
-      .then((res) => console.log("log saved", res.data))
-      .catch((err) => console.error("error saving log", err));
+  // Clear logs (on logout)
+  function clearLog() {
+    if (!user?.username) return;
+    const key = `activityLogs_${user.username}`;
+    localStorage.removeItem(key);
+    setLog([]);
   }
 
   return (
-    <LogContext.Provider value={{ log, addLog }}>
+    <LogContext.Provider value={{ log, addLog, clearLog, setLog }}>
       {children}
     </LogContext.Provider>
   );

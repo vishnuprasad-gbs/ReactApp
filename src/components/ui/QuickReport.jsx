@@ -1,108 +1,69 @@
-
 import React, { useEffect, useState } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-
-import * as XLSX from "xlsx";
 import { useLog } from "@/context/LogContext";
-export default function QuickReport({ logs = [],user }) {
-  const [locations, setLocations] = useState([]);
-const { addLog } = useLog();
-  
+
+export default function QuickReport({ user }) {
+  const [logs, setLogs] = useState([]);
+  const { addLog } = useLog();
+
   useEffect(() => {
-    const fetchLocations = async () => {
-      try {
-        const res = await fetch("http://localhost:5000/savedLoc");
-        const data = await res.json();
-        
-        const latest5 = data.slice(-5).reverse(); 
-        setLocations(latest5);
-      } catch (err) {
-        console.error("Failed to fetch locations:", err);
-      }
-    };
+    // Get logs from localStorage and take the latest 10
+    const logsKey = `activityLogs_${user.username}`;
+    const storedLogs = JSON.parse(localStorage.getItem(logsKey) || "[]");
+    setLogs(storedLogs.slice(-10).reverse()); // latest 10, most recent first
+  }, [user]);
 
-    fetchLocations();
-  }, []);
+  const generatePDF = async () => {
+    const { default: jsPDF } = await import("jspdf");
+    const autoTableModule = await import("jspdf-autotable");
+    const autoTable = autoTableModule.default || autoTableModule;
 
-  
-const generatePDF = () => {
-  const doc = new jsPDF();
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("Activity Logs Report", 14, 20);
 
-  doc.setFontSize(16);
-  doc.text("Quick Report", 14, 20);
+    if (logs.length > 0) {
+      doc.setFontSize(14);
+      const logTable = logs.map((log, i) => [
+        i + 1,
+        typeof log === "string" ? log : log.message || "-",
+       
+      ]);
 
-  
-  if (locations.length > 0) {
-    const locTable = locations.map((loc, i) => [
-      i + 1,
-      loc.name,
-      loc.type,
-      loc.lat.toFixed(5),
-      loc.lng.toFixed(5),
-      new Date(loc.createdAt).toLocaleString(),
-    ]);
-
-    autoTable(doc, {
-      head: [["#", "Name", "Type", "Lat", "Lng", "Saved At"]],
-      body: locTable,
-      startY: 30,
-    });
-  }
-
- 
-  if (logs.length > 0) {
-    doc.text(
-      "Activity Logs",
-      14,
-      doc.previousAutoTable ? doc.previousAutoTable.finalY + 10 : 30
-    );
-    const logTable = logs.map((log, i) => [i + 1, log]);
-    autoTable(doc, {
-      head: [["#", "Log"]],
-      body: logTable,
-      startY: doc.previousAutoTable ? doc.previousAutoTable.finalY + 15 : 40,
-    });
-  }
-addLog(`${user.username} generated pdf quick reports`);
-  doc.save("quick_report.pdf");
-};
-
-
-  
-  const generateExcel = () => {
-    const wb = XLSX.utils.book_new();
-
-   
-    if (locations.length > 0) {
-      const locData = locations.map((loc, i) => ({
-        "#": i + 1,
-        Name: loc.name,
-        Type: loc.type,
-        Lat: loc.lat,
-        Lng: loc.lng,
-        "Saved At": new Date(loc.createdAt).toLocaleString(),
-      }));
-      const ws = XLSX.utils.json_to_sheet(locData);
-      XLSX.utils.book_append_sheet(wb, ws, "Locations");
+      autoTable(doc, {
+        head: [["index", "Log"]],
+        body: logTable,
+        startY: 30,
+      });
     }
 
-    
+    addLog(`generated a PDF report for latest 10 activity logs`);
+    doc.save("activity_logs.pdf");
+  };
+
+  const generateExcel = async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+
     if (logs.length > 0) {
-      const logData = logs.map((log, i) => ({ "#": i + 1, Log: log }));
+      const logData = logs.map((log, i) => ({
+        "index": i + 1,
+        Log: typeof log === "string" ? log : log.message || "-",
+        
+      }));
+
       const ws = XLSX.utils.json_to_sheet(logData);
       XLSX.utils.book_append_sheet(wb, ws, "Activity Logs");
     }
-    addLog(`${user.username} generated excel quick reports`);
-    XLSX.writeFile(wb, "quick_report.xlsx");
+
+    addLog(`generated an Excel report for latest 10 activity logs`);
+    XLSX.writeFile(wb, "activity_logs.xlsx");
   };
 
   return (
     <div className="bg-white rounded-lg shadow p-4 flex flex-col items-center justify-center gap-4">
-      <h3 className="text-lg font-semibold">Quick Reports</h3>
+      <h3 className="text-lg font-semibold">Quick Activity Logs Report</h3>
       <p className="text-sm text-gray-500 text-center">
-        Generate PDF or Excel reports of your latest 5 locations and activity
-        logs.
+        Generate PDF or Excel reports of your latest 10 activity logs.
       </p>
       <div className="flex gap-4">
         <button

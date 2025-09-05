@@ -1,31 +1,29 @@
-import { useEffect } from "react";
+import { useEffect, Suspense, lazy, useMemo } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import useAuth from "./hooks/useAuth";
-import LoginPage from "./pages/LoginPage";
-import Register from "./components/ui/Register";
+import { ToastContainer } from "react-toastify";
+import { LogProvider } from "./context/LogContext";
 
 import "./App.css";
-import Home from "./pages/Home";
-import Dashboard from "./components/Dashboard";
 
-// 👇 import the LogProvider
-import { LogProvider } from "./context/LogContext";
-import Location from "./components/Location";
-import Notification from "./components/Notification";
-import { ToastContainer } from "react-toastify";
+// Lazy-loaded components
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const Register = lazy(() => import("./components/ui/Register"));
+const Home = lazy(() => import("./pages/Home"));
+const Dashboard = lazy(() => import("./components/Dashboard"));
+const Location = lazy(() => import("./components/Location"));
+const Notification = lazy(() => import("./components/Notification"));
 
 function App() {
   const user = useAuth();
   const location = useLocation();
 
-  // 🔹 Save last visited path (only inside /home/*)
   useEffect(() => {
     if (location.pathname.startsWith("/home")) {
       localStorage.setItem("lastPath", location.pathname);
     }
   }, [location]);
 
-  // 🔹 Read last visited path
   const lastPath = localStorage.getItem("lastPath") || "/home/dashboard";
 
   useEffect(() => {
@@ -33,27 +31,72 @@ function App() {
     console.log("LastPath:", lastPath);
   }, [user]);
 
+  const memoUser = useMemo(() => user, [user]);
+
   return (
-    <LogProvider>
+    <LogProvider user={memoUser}>
       <ToastContainer />
+
       <Routes>
-        {/* Root Route → redirect dynamically */}
         <Route
           path="/"
-          element={user ? <Navigate to={lastPath} replace /> : <LoginPage />}
+          element={
+            user ? (
+              <Navigate to={lastPath} replace />
+            ) : (
+              <Suspense fallback={<div className="text-center mt-20">Loading login...</div>}>
+                <LoginPage />
+              </Suspense>
+            )
+          }
         />
 
-        {/* Register */}
-        <Route path="/register" element={<Register />} />
+        <Route
+          path="/register"
+          element={
+            <Suspense fallback={<div className="text-center mt-20">Loading register...</div>}>
+              <Register />
+            </Suspense>
+          }
+        />
 
         {/* Protected Home Routes */}
         <Route
           path="/home"
-          element={user ? <Home user={user} /> : <Navigate to="/" />}
+          element={
+            user ? (
+              <Suspense fallback={<div className="text-center mt-20">Loading home...</div>}>
+                <Home user={user} />
+              </Suspense>
+            ) : (
+              <Navigate to="/" />
+            )
+          }
         >
-          <Route path="dashboard" element={<Dashboard user={user} />} />
-          <Route path="location" element={<Location user={user} />} />
-          <Route path="activity" element={<Notification />} />
+          <Route
+            path="dashboard"
+            element={
+              <Suspense fallback={<div className="text-center mt-20">Loading dashboard...</div>}>
+                <Dashboard user={user} />
+              </Suspense>
+            }
+          />
+          <Route
+            path="location"
+            element={
+              <Suspense fallback={<div className="text-center mt-20">Loading location...</div>}>
+                <Location user={user} />
+              </Suspense>
+            }
+          />
+          <Route
+            path="activity"
+            element={
+              <Suspense fallback={<div className="text-center mt-20">Loading notifications...</div>}>
+                <Notification />
+              </Suspense>
+            }
+          />
         </Route>
       </Routes>
     </LogProvider>

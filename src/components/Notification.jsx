@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import ActivityLog from "./ActivityLog";
-import * as XLSX from "xlsx";
 
 function Notification() {
   const [loading, setLoading] = useState(false);
@@ -12,7 +11,9 @@ function Notification() {
       if (!res.ok) throw new Error("Failed to fetch activity data");
       const data = await res.json();
 
-      // Convert data to Excel
+      
+      const XLSX = await import("xlsx");
+
       const worksheet = XLSX.utils.json_to_sheet(data);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "ActivityLogs");
